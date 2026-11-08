@@ -83,6 +83,16 @@ export type ReBackendId =
   | "pwndbg-mcp"
   | "retdec-mcp"
   | "snowman-mcp"
+  | "ext-re-workbench"
+  | "ext-symexec-py"
+  | "ext-dbi-dse"
+  | "ext-themida-unslopper"
+  | "ext-themida-emu-unpack"
+  | "ext-rust-binary-tools"
+  | "ext-vmp2-tools"
+  | "ext-static-string-deob"
+  | "ext-web-page-archiver"
+  | "ext-dll-manual-mapper"
   ;
 
 export interface ReBackend {
@@ -1106,9 +1116,110 @@ const BACKENDS: Record<ReBackendId, ReBackend> = {
     notes: "Lightweight C-like decompiler for x86. Good for quick triage.",
   },
 
+  // ----- external local binaries, launched by cmd (users bring them) -----
+  // These entries describe a *capability*. The `cmd` field is the executable
+  // name on PATH; users set env paths or edit this map for their install.
 
-  // ----- external tools (ported from ForMCP as catalog, not vendored) -----
-
+  "ext-re-workbench": {
+    id: "ext-re-workbench", name: "External RE Workbench",
+    kind: "both", os: ["windows"],
+    requires: "Windows + user-provided headless RE workbench binary + its own MCP server on 127.0.0.1:8765.",
+    install: [],
+    launch: { cmd: "re-workbench", args: ["--headless", "--mcp"], http: { port: 8765, path: "/mcp" } },
+    mcpConfig: { "ext-re-workbench": { url: "http://127.0.0.1:8765/mcp", headers: { Authorization: "Bearer ${env:MCP_EXT_WB_TOKEN}" } } },
+    tags: ["pe", "macho", "x86", "x64", "arm64", "disasm", "decompile", "aob", "kernel", "mcp-native", "windows"],
+    notes: "JSON-RPC 2.0 on /mcp with 23 domain tools (target/memory/disasm/debugger/driver/xray/patch/devirt/types/notes/analyze/network/proxy/persist/decomp/dotnet/detect/fs/web/script/frida/emulate/re). MCP_EXT_WB_TOKEN for Bearer auth.",
+  },
+  "ext-symexec-py": {
+    id: "ext-symexec-py", name: "Symbolic-execution framework (Python)",
+    kind: "static", os: ["windows", "linux", "macos"],
+    requires: "Python 3.9+. Symbolic execution + IR + SMT backend over x86/ARM/MIPS/MSP430.",
+    install: ["pip install <package>"],
+    launch: { cmd: "python", args: ["-c", "import sys; sys.exit(0)"] },
+    mcpConfig: {},
+    tags: ["symbolic", "ir", "disasm", "python", "multi-arch"],
+    notes: "User provides the package. No upstream MCP server — pair with our mcp-hub to call its Python API.",
+  },
+  "ext-dbi-dse": {
+    id: "ext-dbi-dse", name: "Dynamic binary-analysis library (DSE)",
+    kind: "dynamic", os: ["windows", "linux", "macos"],
+    requires: "C++ or Python 3 runtime; symbolic + taint engine.",
+    install: ["pip install <package>"],
+    launch: { cmd: "python", args: ["-c", "import sys; sys.exit(0)"] },
+    mcpConfig: {},
+    tags: ["symbolic", "taint", "dse", "devirt"],
+    notes: "Dynamic symbolic / taint analysis — classic exploit-dev + VM-devirt workflows.",
+  },
+  "ext-themida-unslopper": {
+    id: "ext-themida-unslopper", name: "Themida unslopper (3.x)",
+    kind: "static", os: ["windows"],
+    requires: "Windows + sandbox to run the stub safely.",
+    install: [],
+    launch: { cmd: "unslop.exe", args: [] },
+    mcpConfig: {},
+    tags: ["themida", "unpacker"],
+    notes: "Removes a Themida 3.x stub and rebuilds the original PE on older samples.",
+  },
+  "ext-themida-emu-unpack": {
+    id: "ext-themida-emu-unpack", name: "Themida emulator unpacker (3.x)",
+    kind: "static", os: ["windows"],
+    requires: "Windows + sandbox.",
+    install: [],
+    launch: { cmd: "themida-emu.exe", args: [] },
+    mcpConfig: {},
+    tags: ["themida", "unpacker", "emulator"],
+    notes: "Emulator-based stub execution → recovers OEP + original imports.",
+  },
+  "ext-rust-binary-tools": {
+    id: "ext-rust-binary-tools", name: "Rust static binary-analysis library",
+    kind: "static", os: ["windows", "linux", "macos"],
+    requires: "Rust toolchain.",
+    install: ["cargo install <crate>"],
+    launch: { cmd: "rust-bin-tools", args: [] },
+    mcpConfig: {},
+    tags: ["decompile", "rust", "llm-aided"],
+    notes: "Rust binary-analysis library with plug-in decompilers; good target for LLM-aided renaming.",
+  },
+  "ext-vmp2-tools": {
+    id: "ext-vmp2-tools", name: "VMProtect 2 tools",
+    kind: "static", os: ["windows"],
+    requires: "Windows + legacy VMP2 sample.",
+    install: [],
+    launch: { cmd: "vmp2-tools.exe", args: [] },
+    mcpConfig: {},
+    tags: ["vmprotect", "devirt", "legacy"],
+    notes: "Handler dumpers + opcode-map extractors for legacy VMProtect 2 packs.",
+  },
+  "ext-static-string-deob": {
+    id: "ext-static-string-deob", name: "Static string deobfuscator",
+    kind: "static", os: ["windows", "linux", "macos"],
+    requires: "Python 3.10+.",
+    install: ["pip install <package>"],
+    launch: { cmd: "string-deob", args: [] },
+    mcpConfig: {},
+    tags: ["strings", "deob"],
+    notes: "Automated stack / tight / decoded-string recovery. Native shellcode_xor_decode is a subset.",
+  },
+  "ext-web-page-archiver": {
+    id: "ext-web-page-archiver", name: "Single-file web-page archiver",
+    kind: "static", os: ["windows", "linux", "macos"],
+    requires: "Rust-built CLI.",
+    install: ["cargo install <crate>"],
+    launch: { cmd: "web-archiver", args: [] },
+    mcpConfig: {},
+    tags: ["web", "archive", "c2-triage"],
+    notes: "Bundle a web page (HTML+CSS+JS+images) into a single file. Useful for C2 panel capture.",
+  },
+  "ext-dll-manual-mapper": {
+    id: "ext-dll-manual-mapper", name: "DLL manual mapper",
+    kind: "dynamic", os: ["windows"],
+    requires: "Windows + target process.",
+    install: [],
+    launch: { cmd: "dll-mapper.exe", args: [] },
+    mcpConfig: {},
+    tags: ["manual-map", "dll", "injection"],
+    notes: "Loads a DLL into another process without going through LoadLibrary. Pairs with native iat_rebuild_*.",
+  },
 
 
 

@@ -27,6 +27,10 @@ const B = {
   x64dbg: { name: "x64dbg bridge", port: 48765, hostEnv: "MCP_X64DBG_HOST", portEnv: "MCP_X64DBG_PORT", installHint: "plugins-side/x64dbg/" },
   binja:  { name: "Binja bridge",  port: 48766, hostEnv: "MCP_BINJA_HOST",  portEnv: "MCP_BINJA_PORT",  installHint: "plugins-side/binaryninja/mcp_bridge.py" },
   frida:  { name: "Frida bridge",  port: 48767, hostEnv: "MCP_FRIDA_HOST",  portEnv: "MCP_FRIDA_PORT",  installHint: "plugins-side/frida/mcp_bridge.py (pip install frida)" },
+  // ext-wb: an external user-provided RE workbench that exposes its own
+  // MCP server on /mcp. Users install the workbench themselves and point
+  // us at it with MCP_EXT_WB_HOST / PORT / TOKEN.
+  extwb: { name: "External RE Workbench", port: 8765, hostEnv: "MCP_EXT_WB_HOST", portEnv: "MCP_EXT_WB_PORT", installHint: "external local binary — set MCP_EXT_WB_HOST / MCP_EXT_WB_PORT" },
 } as const satisfies Record<string, Backend>;
 
 type Bk = keyof typeof B;
@@ -195,6 +199,56 @@ export function registerPluginClients(server: McpServer): void {
     async ({ session, module }: { session: string; module?: string }) => run(B.frida, "/tool/exports", { session, module }, `frida_exports ${module ?? "(main)"}`));
   server.tool("frida_modules", "Enumerate loaded modules in a Frida session.", { session: z.string() },
     async ({ session }: { session: string }) => run(B.frida, "/tool/modules", { session }, `frida_modules ${session}`));
+
+  // -------- external workbench (JSON-RPC 2.0 /mcp passthrough) ---------
+  //
+  // Thin wrappers over an external user-provided workbench that exposes
+  // its own MCP tool catalog under POST /mcp. We offer `ext_wb_call` as
+  // a universal passthrough + `ext_wb_health` / `ext_wb_tools` so agents
+  // can discover the surface without us having to hard-code 200 fine-
+  // grained tool definitions on this side.
+  const extRpc = async (method: string, params: unknown): Promise<string> => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 60_000);
+    try {
+      const token = process.env.MCP_EXT_WB_TOKEN?.trim();
+      const headers: Record<string, string> = { "content-type": "application/json" };
+      if (token) headers.authorization = `Bearer ${token}`;
+      const resp = await fetch(url(B.extwb, "/mcp"), {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+        signal: ctrl.signal,
+      });
+      const text = await resp.text();
+      if (!resp.ok) throw new Error(`external workbench HTTP ${resp.status}: ${text.slice(0, 300)}`);
+      return text;
+    } finally { clearTimeout(timer); }
+  };
+
+  server.tool(
+    "ext_wb_health",
+    "Probe an external RE workbench at its /mcp endpoint (default 127.0.0.1:8765; override with MCP_EXT_WB_HOST/PORT; MCP_EXT_WB_TOKEN for bearer auth).",
+    {},
+    async () => run(B.extwb, "/healthz", {}, "ext_wb_health"));
+
+  server.tool(
+    "ext_wb_tools",
+    "List every tool the external workbench advertises via its tools/list method.",
+    {},
+    async () => {
+      try { return { content: [{ type: "text" as const, text: `# ext_wb_tools\n\n${await extRpc("tools/list", {})}` }] }; }
+      catch (e) { return { content: [{ type: "text" as const, text: unreachable(B.extwb, e) }], isError: true as const }; }
+    });
+
+  server.tool(
+    "ext_wb_call",
+    "Call any tool on the external workbench. `name` is the tool name reported by ext_wb_tools; `arguments` is that tool's own params.",
+    { name: z.string(), arguments: z.record(z.string(), z.any()).default({}) },
+    async ({ name, arguments: args }: { name: string; arguments: Record<string, unknown> }) => {
+      try { return { content: [{ type: "text" as const, text: `# ext_wb_call ${name}\n\n${await extRpc("tools/call", { name, arguments: args })}` }] }; }
+      catch (e) { return { content: [{ type: "text" as const, text: unreachable(B.extwb, e) }], isError: true as const }; }
+    });
 
   // -------- bridge_health_all: one-shot probe of every bridge ---------
   server.tool("bridge_health_all", "Probe every plugins-side bridge in parallel and report which are up.", {},
