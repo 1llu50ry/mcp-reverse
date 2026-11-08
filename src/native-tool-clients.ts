@@ -27,11 +27,6 @@ const B = {
   x64dbg: { name: "x64dbg bridge", port: 48765, hostEnv: "MCP_X64DBG_HOST", portEnv: "MCP_X64DBG_PORT", installHint: "plugins-side/x64dbg/" },
   binja:  { name: "Binja bridge",  port: 48766, hostEnv: "MCP_BINJA_HOST",  portEnv: "MCP_BINJA_PORT",  installHint: "plugins-side/binaryninja/mcp_bridge.py" },
   frida:  { name: "Frida bridge",  port: 48767, hostEnv: "MCP_FRIDA_HOST",  portEnv: "MCP_FRIDA_PORT",  installHint: "plugins-side/frida/mcp_bridge.py (pip install frida)" },
-  // reverse-slop is a standalone Windows RE workbench (ImGui/DX11 + Tauri +
-  // C++ engine with its own MCP server). Not vendored — users install from
-  // https://github.com/kaizer1308/reverse-slap and run its headless engine.
-  // Default listener: 127.0.0.1:8765. Env overrides: MCP_SLOP_HOST / PORT.
-  slop:   { name: "reverse-slop",  port: 8765,  hostEnv: "MCP_SLOP_HOST",   portEnv: "MCP_SLOP_PORT",   installHint: "https://github.com/kaizer1308/reverse-slap — run engine headless (--mcp)" },
 } as const satisfies Record<string, Backend>;
 
 type Bk = keyof typeof B;
@@ -46,9 +41,9 @@ async function call(b: Backend, path: string, body: unknown = {}, timeoutMs = 60
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    // /healthz (our bridges) and /health (reverse-slop) are both GET-only
-    // liveness probes; everything else — including action RPCs — POSTs.
-    const method = (path === "/healthz" || path === "/health") ? "GET" : "POST";
+    // /healthz is the GET-only liveness probe shared by every bridge;
+    // everything else — including action RPCs — POSTs.
+    const method = path === "/healthz" ? "GET" : "POST";
     const resp = await fetch(url(b, path), {
       method,
       headers: { "content-type": "application/json" },
@@ -201,66 +196,12 @@ export function registerPluginClients(server: McpServer): void {
   server.tool("frida_modules", "Enumerate loaded modules in a Frida session.", { session: z.string() },
     async ({ session }: { session: string }) => run(B.frida, "/tool/modules", { session }, `frida_modules ${session}`));
 
-  // -------- reverse-slop (JSON-RPC over /mcp, 23 domain tools) ---------
-  //
-  // reverse-slop's own MCP endpoint lives at POST /mcp with JSON-RPC 2.0 body
-  // ({jsonrpc, id, method, params}), not our ad-hoc /tool/* shape. We expose
-  // three thin wrappers so the agent gets full reach into its 23 domains
-  // (target / memory / disasm / debugger / driver / xray / patch / devirt /
-  // types / notes / analyze / network / proxy / persist / decomp / dotnet /
-  // detect / fs / web / script / frida / emulate / re) without having to add
-  // 200 fine-grained tool definitions on this side.
-  const slopRpc = async (method: string, params: unknown): Promise<string> => {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 60_000);
-    try {
-      const token = process.env.MCP_SLOP_TOKEN?.trim();
-      const headers: Record<string, string> = { "content-type": "application/json" };
-      if (token) headers.authorization = `Bearer ${token}`;
-      const resp = await fetch(url(B.slop, "/mcp"), {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-        signal: ctrl.signal,
-      });
-      const text = await resp.text();
-      if (!resp.ok) throw new Error(`reverse-slop HTTP ${resp.status}: ${text.slice(0, 300)}`);
-      return text;
-    } finally { clearTimeout(timer); }
-  };
-
-  server.tool(
-    "slop_health",
-    "Probe a running reverse-slop engine at 127.0.0.1:8765 (override with MCP_SLOP_HOST/PORT; MCP_SLOP_TOKEN for bearer auth).",
-    {},
-    async () => run(B.slop, "/health", {}, "slop_health"));
-
-  server.tool(
-    "slop_tools",
-    "List every reverse-slop MCP tool and its `action` sub-commands.",
-    {},
-    async () => {
-      try { return { content: [{ type: "text" as const, text: `# slop_tools\n\n${await slopRpc("tools/list", {})}` }] }; }
-      catch (e) { return { content: [{ type: "text" as const, text: unreachable(B.slop, e) }], isError: true as const }; }
-    });
-
-  server.tool(
-    "slop_call",
-    "Call any reverse-slop tool. `name` is one of its 23 top-level tools (target, memory, disasm, debugger, driver, xray, patch, devirt, types, notes, analyze, network, proxy, persist, decomp, dotnet, detect, fs, web, script, frida, emulate, re); `arguments` is that tool's own params including the required `action`.",
-    { name: z.string(), arguments: z.record(z.string(), z.any()).default({}) },
-    async ({ name, arguments: args }: { name: string; arguments: Record<string, unknown> }) => {
-      try { return { content: [{ type: "text" as const, text: `# slop_call ${name}.${(args as { action?: string }).action ?? "?"}\n\n${await slopRpc("tools/call", { name, arguments: args })}` }] }; }
-      catch (e) { return { content: [{ type: "text" as const, text: unreachable(B.slop, e) }], isError: true as const }; }
-    });
-
   // -------- bridge_health_all: one-shot probe of every bridge ---------
   server.tool("bridge_health_all", "Probe every plugins-side bridge in parallel and report which are up.", {},
     async () => {
       const results = await Promise.all((Object.entries(B) as [Bk, Backend][]).map(async ([k, b]) => {
         try {
-          // reverse-slop uses /health (no z); every other bridge is /healthz.
-          const path = k === "slop" ? "/health" : "/healthz";
-          const t = await call(b, path, {}, 1500);
+          const t = await call(b, "/healthz", {}, 1500);
           return `- **${k}** (${b.name}, :${b.port})  UP  — ${t.slice(0, 160)}`;
         } catch (e) {
           return `- **${k}** (${b.name}, :${b.port})  DOWN  — ${(e as Error).message.slice(0, 160)}`;

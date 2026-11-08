@@ -43,6 +43,12 @@ import { registerJsDeob } from "./native-jsdeob.js";
 import { registerIatRebuild } from "./native-iat-rebuild.js";
 import { registerOllvmUndo } from "./native-ollvm-undo.js";
 import { registerBitmanip } from "./native-bitmanip.js";
+import { registerAsar } from "./native-asar.js";
+import { registerGoBinary } from "./native-go-binary.js";
+import { registerGguf } from "./native-gguf.js";
+import { registerBeam } from "./native-beam.js";
+import { registerAuthenticode } from "./native-authenticode.js";
+import { registerReaPack } from "./native-rea-pack.js";
 import { registerRop } from "./native-rop.js";
 import { registerGameEngine } from "./native-gameengine.js";
 import { registerSampling } from "./native-sampling.js";
@@ -1967,6 +1973,17 @@ registerJsDeob(server);
 registerIatRebuild(server);
 registerOllvmUndo(server);
 registerBitmanip(server);
+
+// Artifact-type coverage parity: Electron ASAR, Go BuildInfo,
+// GGUF / safetensors model artifacts, Erlang BEAM, PE Authenticode
+// signers, PyInstaller CArchive, HAR captures, SQLite inspect,
+// ELF notes, Apple IPS crashes.
+registerAsar(server);
+registerGoBinary(server);
+registerGguf(server);
+registerBeam(server);
+registerAuthenticode(server);
+registerReaPack(server);
 registerRop(server);
 registerGameEngine(server);
 registerSampling(server);
