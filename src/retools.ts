@@ -84,6 +84,15 @@ export type ReBackendId =
   | "retdec-mcp"
   | "snowman-mcp"
   | "reverse-slop"
+  | "miasm"
+  | "triton"
+  | "unslop"
+  | "unthemidator"
+  | "triskel"
+  | "vmp2-tools"
+  | "flare-floss"
+  | "monolith"
+  | "smap"
   // Previously-vendored entries removed in v5.0.1 — their behaviour
   // is now covered by this server's native implementations:
   //   yaraflux          -> src/native-yara.ts
@@ -1148,6 +1157,99 @@ const BACKENDS: Record<ReBackendId, ReBackend> = {
     notes:
       "Windows RE workbench with its own MCP server at /mcp (JSON-RPC 2.0, 23 domain tools: target/memory/disasm/debugger/driver/xray/patch/devirt/types/notes/analyze/network/proxy/persist/decomp/dotnet/detect/fs/web/script/frida/emulate/re). " +
       "Prefer this server's `slop_health` / `slop_tools` / `slop_call` native tools once it's running; set MCP_SLOP_TOKEN for Bearer auth. Not vendored — the project owns its own repo.",
+  },
+
+  // ----- external tools (ported from ForMCP as catalog, not vendored) -----
+
+  "miasm": {
+    id: "miasm", name: "Miasm",
+    kind: "static", os: ["windows", "linux", "macos"],
+    requires: "Python 3.9+; x86/ARM/MIPS/MSP430 disasm + IR + SMT backend.",
+    install: ["pip install miasm", "# or: git clone https://github.com/cea-sec/miasm && pip install -e miasm"],
+    launch: { cmd: "python", args: ["-m", "miasm.analysis.sandbox"] },
+    mcpConfig: {},
+    tags: ["symbolic", "ir", "disasm", "python", "multi-arch"],
+    notes: "Symbolic execution + IR framework. No MCP server upstream; use its Python API from a bridge if you need agent access. SKILL: formcp-miasm.",
+  },
+  "triton": {
+    id: "triton", name: "Triton DSE",
+    kind: "dynamic", os: ["windows", "linux", "macos"],
+    requires: "C++ or Python 3; symbolic + taint analysis engine.",
+    install: ["pip install triton-library", "# or build: https://github.com/JonathanSalwan/Triton"],
+    launch: { cmd: "python", args: ["-c", "import triton; print(triton.VERSION)"] },
+    mcpConfig: {},
+    tags: ["symbolic", "taint", "dse", "devirt"],
+    notes: "Dynamic binary analysis library. Used for exploit dev + VM devirtualisation. SKILL: formcp-triton.",
+  },
+  "unslop": {
+    id: "unslop", name: "unslop",
+    kind: "static", os: ["windows"],
+    requires: "Windows + ability to run the sample under control (sandbox).",
+    install: ["git clone https://github.com/heydamir/unslop %USERPROFILE%\\dev\\unslop"],
+    launch: { cmd: "unslop.exe", args: [] },
+    mcpConfig: {},
+    tags: ["themida", "unpacker"],
+    notes: "Themida unslopper for 3.x samples. SKILL: formcp-unslop.",
+  },
+  "unthemidator": {
+    id: "unthemidator", name: "unthemidator",
+    kind: "static", os: ["windows"],
+    requires: "Windows + sandbox.",
+    install: ["# clone from x86rc's repo"],
+    launch: { cmd: "unthemidator.exe", args: [] },
+    mcpConfig: {},
+    tags: ["themida", "unpacker", "emulator"],
+    notes: "Themida 3.x emulator-based unpacker. SKILL: formcp-unthemidator.",
+  },
+  "triskel": {
+    id: "triskel", name: "Triskel",
+    kind: "static", os: ["windows", "linux", "macos"],
+    requires: "Rust toolchain.",
+    install: ["cargo install triskel"],
+    launch: { cmd: "triskel", args: [] },
+    mcpConfig: {},
+    tags: ["decompile", "rust", "llm-aided"],
+    notes: "Rust binary-analysis library with LLM-aided renaming. SKILL: formcp-triskel.",
+  },
+  "vmp2-tools": {
+    id: "vmp2-tools", name: "VMProtect 2 tools",
+    kind: "static", os: ["windows"],
+    requires: "Windows + legacy VMP2 sample.",
+    install: ["# clone upstream"],
+    launch: { cmd: "vmp2.exe", args: [] },
+    mcpConfig: {},
+    tags: ["vmprotect", "devirt", "legacy"],
+    notes: "Handler dumpers + opcode-map extractors for VMP2. SKILL: formcp-vmp2-tools.",
+  },
+  "flare-floss": {
+    id: "flare-floss", name: "FLARE FLOSS",
+    kind: "static", os: ["windows", "linux", "macos"],
+    requires: "Python 3.10+.",
+    install: ["pip install flare-floss"],
+    launch: { cmd: "floss", args: [] },
+    mcpConfig: {},
+    tags: ["strings", "deob", "mandiant"],
+    notes: "Automated stack / tight / decoded-string recovery. Native `shellcode_xor_decode` is a subset. SKILL: formcp-flare-floss.",
+  },
+  "monolith": {
+    id: "monolith", name: "monolith",
+    kind: "static", os: ["windows", "linux", "macos"],
+    requires: "Rust-built CLI.",
+    install: ["cargo install monolith"],
+    launch: { cmd: "monolith", args: [] },
+    mcpConfig: {},
+    tags: ["web", "archive", "c2-triage"],
+    notes: "Bundle a web page (HTML+CSS+JS+images) into a single file. Useful for C2 panel capture. SKILL: formcp-monolith.",
+  },
+  "smap": {
+    id: "smap", name: "smap manual mapper",
+    kind: "dynamic", os: ["windows"],
+    requires: "Windows + target process.",
+    install: ["# clone upstream, compile with MSVC"],
+    launch: { cmd: "smap.exe", args: [] },
+    mcpConfig: {},
+    tags: ["manual-map", "dll", "injection"],
+    notes: "DLL manual mapper that skips LoadLibrary. Pairs with IAT rebuild helpers. SKILL: formcp-smap.",
   },
 };
 

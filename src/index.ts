@@ -37,6 +37,12 @@ import { registerCacheTools, getCache } from "./decompile-cache.js";
 import { registerChunkTools } from "./chunking.js";
 import { runRequestMiddleware } from "./http-middleware.js";
 import { registerNativeDiff } from "./native-diff.js";
+import { registerApiHash } from "./native-apihash.js";
+import { registerSyscalls } from "./native-syscalls.js";
+import { registerJsDeob } from "./native-jsdeob.js";
+import { registerIatRebuild } from "./native-iat-rebuild.js";
+import { registerOllvmUndo } from "./native-ollvm-undo.js";
+import { registerBitmanip } from "./native-bitmanip.js";
 import { registerRop } from "./native-rop.js";
 import { registerGameEngine } from "./native-gameengine.js";
 import { registerSampling } from "./native-sampling.js";
@@ -1947,6 +1953,20 @@ getCache(ROOT);
 //   decompile_summarize / struct_name_suggest / explain_at_level — MCP sampling
 //   viz_call_graph / viz_cfg — SVG graph rendering
 registerNativeDiff(server);
+
+// Native ports from ForMCP projects (no vendor):
+//   apihash_*  — lazy_importer / hashdb-ida / hashdb-ghidra schemes
+//   syscall_*  — Windows syscall tables (win10-1909 / 21h2, win11-23h2)
+//   js_deob_*  — javascript-deobfuscator (hex literals + string arrays)
+//   iat_rebuild_* — PyIATRebuild / Import-Handler
+//   ollvm_*    — de-ollvm / VMAttack flatten detector
+//   bits_*     — reversingBits cheatsheet ops
+registerApiHash(server);
+registerSyscalls(server);
+registerJsDeob(server);
+registerIatRebuild(server);
+registerOllvmUndo(server);
+registerBitmanip(server);
 registerRop(server);
 registerGameEngine(server);
 registerSampling(server);
